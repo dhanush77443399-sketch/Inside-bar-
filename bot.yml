@@ -1,0 +1,28 @@
+name: Inside Bar Bot
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "backtest or scan"
+        default: "backtest"
+  schedule:
+    - cron: "30 10 * * 1-5"   # 4:00 PM IST, after NSE close (Mon-Fri) -> daily scan
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - name: Run
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python strategy.py ${{ github.event.inputs.mode || 'scan' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trades
+          path: trades.csv
+          if-no-files-found: ignore
