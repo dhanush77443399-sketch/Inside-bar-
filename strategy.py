@@ -9,8 +9,11 @@ MIN_MOVE_PCT = 1.5      # mother candle (close-open)/open >= 1.5%
 MIN_BODY_RATIO = 0.80   # body >= 80% of mother candle's full range
 RR = 2.0                # 1:2 risk-reward
 MAX_HOLD_DAYS = 30      # force-exit after N days (None = hold until SL/TP)
-BACKTEST_DAYS = 60      # only signals from the last N calendar days are tested
-BACKTEST_PERIOD = "1y"  # data downloaded (extra history is just for context)
+# Days to backtest: set from GitHub "Run workflow" box (DAYS env) or `python strategy.py backtest 90`
+BACKTEST_DAYS = int(os.getenv("DAYS") or (sys.argv[2] if len(sys.argv) > 2 else 60))
+BACKTEST_PERIOD = "2y" if BACKTEST_DAYS <= 500 else ("5y" if BACKTEST_DAYS <= 1700 else "10y")
+ENTRY_TIME = "15:30 IST"   # daily candle closes at NSE close, entry is taken at that close
+MAX_TRADES_IN_TELEGRAM = 60  # most recent N trades listed in chat (full list in trades.csv)
 UNIVERSE = "NIFTY200"   # "NIFTY200" = fetch official list, anything else = symbols.txt
 NIFTY200_URLS = [
     "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv",
@@ -96,8 +99,8 @@ def backtest(symbol):
             res = simulate(df, i, sig)
             if res:
                 j, r, why = res
-                trades.append(dict(symbol=symbol, date=df.index[i].date(),
-                                   side=sig["side"], entry=round(sig["entry"], 2),
+                trades.append(dict(symbol=symbol.replace(".NS", ""), date=df.index[i].date(),
+                                   time=ENTRY_TIME, side=sig["side"], entry=round(sig["entry"], 2),
                                    sl=round(sig["sl"], 2), tp=round(sig["tp"], 2),
                                    exit_date=df.index[j].date(), result=why, R=round(r, 2)))
                 i = j  # one trade at a time per symbol
@@ -126,9 +129,15 @@ def telegram(msg):
     tok, chat = os.getenv("TELEGRAM_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
     if not tok or not chat:
         print("[Telegram not configured]\n" + msg); return
-    for k in range(0, len(msg), 4000):
+    chunks, cur = [], ""
+    for line in msg.split("\n"):
+        if len(cur) + len(line) + 1 > 3800:
+            chunks.append(cur); cur = ""
+        cur += line + "\n"
+    chunks.append(cur)
+    for c in chunks:
         requests.post(f"https://api.telegram.org/bot{tok}/sendMessage",
-                      data={"chat_id": chat, "text": msg[k:k+4000]}, timeout=30)
+                      data={"chat_id": chat, "text": c}, timeout=30)
 
 
 def nifty200():
@@ -156,6 +165,18 @@ def symbols():
         return [x.strip() for x in f if x.strip() and not x.startswith("#")]
 
 
+def trade_lines(t):
+    icon = {"TP": "✅ TP", "SL": "❌ SL", "TIME": "⏱ TIME", "OPEN": "🔵 OPEN"}
+    t = t.sort_values("date", ascending=False).head(MAX_TRADES_IN_TELEGRAM)
+    out = []
+    for r in t.itertuples():
+        out.append(f"{'🟢' if r.side=='BUY' else '🔴'} {r.symbol} | {r.side}\n"
+                   f"📅 {r.date} {r.time}\n"
+                   f"Entry {r.entry} | SL {r.sl} | TP {r.tp}\n"
+                   f"{icon[r.result]} ({r.exit_date}) {r.R:+.1f}R\n")
+    return out
+
+
 def run_backtest():
     all_t, syms = [], symbols()
     for n, s in enumerate(syms, 1):
@@ -165,6 +186,9 @@ def run_backtest():
     t = pd.DataFrame(all_t)
     t.to_csv("trades.csv", index=False)
     telegram(f"📊 Inside Bar Backtest - {len(syms)} stocks (last {BACKTEST_DAYS} days, 1D, RR 1:{RR:g})\n\n" + summary(t))
+    if not t.empty:
+        telegram(f"📋 Trades (latest {min(len(t), MAX_TRADES_IN_TELEGRAM)} of {len(t)})\n\n"
+                 + "\n".join(trade_lines(t)))
 
 
 def run_scan():
