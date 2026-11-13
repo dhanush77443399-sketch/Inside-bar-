@@ -15,9 +15,9 @@ BACKTEST_PERIOD = "2y" if BACKTEST_DAYS <= 500 else ("5y" if BACKTEST_DAYS <= 17
 ENTRY_TIME = "15:30 IST"   # daily candle closes at NSE close, entry is taken at that close
 MAX_TRADES_IN_TELEGRAM = 60  # most recent N trades listed in chat (full list in trades.csv)
 UNIVERSE = "NIFTY500"   # "NIFTY200" = fetch official list, anything else = symbols.txt
-NIFTY200_URLS = [
-    "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv",
-    "https://www.niftyindices.com/IndexConstituent/ind_nifty200list.csv",
+NIFTY500_URLS = [
+    "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv",
+    "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv",
 ]
 # ----------------------------------------
 
