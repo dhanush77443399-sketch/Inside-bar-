@@ -9,7 +9,8 @@ MIN_MOVE_PCT = 1.5      # mother candle (close-open)/open >= 1.5%
 MIN_BODY_RATIO = 0.80   # body >= 80% of mother candle's full range
 RR = 2.0                # 1:2 risk-reward
 MAX_HOLD_DAYS = 30      # force-exit after N days (None = hold until SL/TP)
-BACKTEST_PERIOD = "5y"
+BACKTEST_DAYS = 60      # only signals from the last N calendar days are tested
+BACKTEST_PERIOD = "1y"  # data downloaded (extra history is just for context)
 UNIVERSE = "NIFTY200"   # "NIFTY200" = fetch official list, anything else = symbols.txt
 NIFTY200_URLS = [
     "https://nsearchives.nseindia.com/content/indices/ind_nifty200list.csv",
@@ -75,7 +76,7 @@ def simulate(df, i, sig):
             if d.High >= sig["sl"]: return j, -1.0, "SL"
             if d.Low <= sig["tp"]: return j, RR, "TP"
     if end == last and (MAX_HOLD_DAYS is None or last < i + MAX_HOLD_DAYS):
-        return None  # still open
+        return last, 0.0, "OPEN"  # still open, excluded from stats
     exit_px = df.iloc[end].Close
     r = ((exit_px - sig["entry"]) if sig["side"] == "BUY"
          else (sig["entry"] - exit_px)) / risk
@@ -85,7 +86,11 @@ def simulate(df, i, sig):
 def backtest(symbol):
     df = load(symbol, BACKTEST_PERIOD)
     trades, i = [], 2
+    cutoff = df.index[-1] - pd.Timedelta(days=BACKTEST_DAYS)
     while i < len(df):
+        if df.index[i] < cutoff:
+            i += 1
+            continue
         sig = signal_at(df, i)
         if sig:
             res = simulate(df, i, sig)
@@ -103,12 +108,16 @@ def backtest(symbol):
 def summary(t):
     if t.empty:
         return "No trades found."
+    n_open = (t.result == "OPEN").sum()
+    t = t[t.result != "OPEN"]
+    if t.empty:
+        return f"No closed trades yet. Open trades: {n_open}"
     wins = (t.R > 0).sum()
     eq = t.R.cumsum()
     dd = (eq.cummax() - eq).max()
     return (f"Trades: {len(t)}\nWin rate: {wins/len(t)*100:.1f}%\n"
             f"Total R: {t.R.sum():.1f}\nAvg R/trade: {t.R.mean():.2f}\n"
-            f"Max drawdown: {dd:.1f}R\n"
+            f"Max drawdown: {dd:.1f}R\nStill open: {n_open}\n"
             + "\n".join(f"{k}: {len(g)} trades, win {((g.R>0).mean()*100):.0f}%, {g.R.sum():.1f}R"
                         for k, g in t.groupby("side")))
 
@@ -155,7 +164,7 @@ def run_backtest():
         if n % 25 == 0: print(f"{n}/{len(syms)} done")
     t = pd.DataFrame(all_t)
     t.to_csv("trades.csv", index=False)
-    telegram(f"📊 Inside Bar Backtest - {len(syms)} stocks ({BACKTEST_PERIOD}, 1D, RR 1:{RR:g})\n\n" + summary(t))
+    telegram(f"📊 Inside Bar Backtest - {len(syms)} stocks (last {BACKTEST_DAYS} days, 1D, RR 1:{RR:g})\n\n" + summary(t))
 
 
 def run_scan():
