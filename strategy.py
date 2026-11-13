@@ -158,7 +158,7 @@ def symbols():
     if UNIVERSE == "NIFTY200":
         got = nifty200()
         if got:
-            print(f"Loaded {len(got)} Nifty 200 symbols")
+            print(f"Loaded {len(got)} Nifty 500 symbols")
             return got
         print("Falling back to symbols.txt")
     with open("symbols.txt") as f:
