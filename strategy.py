@@ -14,8 +14,8 @@ BACKTEST_DAYS = int(os.getenv("DAYS") or (sys.argv[2] if len(sys.argv) > 2 else 
 BACKTEST_PERIOD = "2y" if BACKTEST_DAYS <= 500 else ("5y" if BACKTEST_DAYS <= 1700 else "10y")
 ENTRY_TIME = "15:30 IST"   # daily candle closes at NSE close, entry is taken at that close
 MAX_TRADES_IN_TELEGRAM = 60  # most recent N trades listed in chat (full list in trades.csv)
-UNIVERSE = "NIFTY500"   # "NIFTY200" = fetch official list, anything else = symbols.txt
-NIFTY500_URLS = [
+UNIVERSE = "NIFTY500"   # "NIFTY500" = fetch official list, anything else = symbols.txt
+NIFTY_URLS = [
     "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv",
     "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv",
 ]
@@ -140,23 +140,23 @@ def telegram(msg):
                       data={"chat_id": chat, "text": c}, timeout=30)
 
 
-def nifty200():
+def nifty500():
     hdr = {"User-Agent": "Mozilla/5.0"}
-    for url in NIFTY200_URLS:
+    for url in NIFTY_URLS:
         try:
             r = requests.get(url, headers=hdr, timeout=30)
             r.raise_for_status()
             syms = pd.read_csv(io.StringIO(r.text))["Symbol"].str.strip().tolist()
-            if len(syms) >= 150:
+            if len(syms) >= 400:
                 return [x + ".NS" for x in syms]
         except Exception as e:
-            print("Nifty200 fetch failed:", url, e)
+            print("Nifty500 fetch failed:", url, e)
     return None
 
 
 def symbols():
-    if UNIVERSE == "NIFTY200":
-        got = nifty200()
+    if UNIVERSE == "NIFTY500":
+        got = nifty500()
         if got:
             print(f"Loaded {len(got)} Nifty 500 symbols")
             return got
@@ -182,7 +182,7 @@ def run_backtest():
     for n, s in enumerate(syms, 1):
         try: all_t += backtest(s)
         except Exception as e: print(s, "failed:", e)
-        if n % 25 == 0: print(f"{n}/{len(syms)} done")
+        if n % 50 == 0: print(f"{n}/{len(syms)} done")
     t = pd.DataFrame(all_t)
     t.to_csv("trades.csv", index=False)
     telegram(f"📊 Inside Bar Backtest - {len(syms)} stocks (last {BACKTEST_DAYS} days, 1D, RR 1:{RR:g})\n\n" + summary(t))
